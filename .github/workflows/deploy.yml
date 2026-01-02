@@ -1,0 +1,81 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    # STEP 1: Update Code
+    - name: 1. Git Pull 
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.SSH_KEY }}
+        port: ${{ secrets.SSH_PORT }}
+        script: |
+          cd /var/www/html/malabar-trail-run
+          
+          # FIX PERMISSION: Ubah owner folder jadi user yg sedang login
+          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chown -R ${{ secrets.USERNAME }}:${{ secrets.USERNAME }} .
+          
+          # Git Config Safe Directory
+          git config --global --add safe.directory /var/www/html/malabar-trail-run
+          
+          # Update URL & Pull
+          git remote set-url origin https://${{ secrets.GH_TOKEN }}@github.com/robycigar/malabar-trail-run.git
+          git pull origin main
+
+    # STEP 2: Build Root React Project
+    - name: 2. Build Root React Project
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.SSH_KEY }}
+        port: ${{ secrets.SSH_PORT }}
+        script: |
+          # --- LOAD NVM ---
+          export NVM_DIR="$HOME/.nvm"
+          [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+          # ----------------
+          
+          cd /var/www/html/malabar-trail-run
+          pnpm install
+          pnpm build
+
+    # STEP 3: Build Admin React Project
+    - name: 3. Build Admin React Project
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.SSH_KEY }}
+        port: ${{ secrets.SSH_PORT }}
+        script: |
+          # --- LOAD NVM ---
+          export NVM_DIR="$HOME/.nvm"
+          [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+          # ----------------
+          cd /var/www/html/malabar-trail-run/admin
+          pnpm install
+          pnpm build
+    # STEP 4: Restart Backend (Go)
+    - name: 4. Restart Backend Service
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.SSH_KEY }}
+        port: ${{ secrets.SSH_PORT }}
+        script: |
+          # Menggunakan echo pipe untuk sudo password
+          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S systemctl restart malabarapp.service
+          # Cek status sekilas
+          systemctl status malabarapp.service --no-pager | head -n 10
